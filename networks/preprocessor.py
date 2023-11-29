@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 from utils import comm
 from utils.grids import GridConverter
-from mpu.mappings import reduce_from_parallel_region, copy_to_parallel_region
+from modulus.distributed.mappings import reduce_from_parallel_region, copy_to_parallel_region
 
 class Preprocessor2D(nn.Module):
     def __init__(self, params):
@@ -290,19 +290,19 @@ class Preprocessor2D(nn.Module):
             self.history_diff_mean = torch.mean(torch.sum(xr[:, 1:, ...] - xr[:, 0:-1, ...], dim=(4,5)), dim=(1,2))
             # reduce across gpus
             if comm.get_size("spatial") > 1:
-                self.history_diff_mean = reduce_from_parallel_region(self.history_diff_mean, "spatial")
+                self.history_diff_mean = reduce_from_parallel_region(self.history_diff_mean, comm.get_group("spatial"))
             self.history_diff_mean = self.history_diff_mean / float(self.img_shape[0] * self.img_shape[1])
 
             # time difference std
             self.history_diff_var = torch.mean(torch.sum( torch.square( (xr[:, 1:, ...] - xr[:, 0:-1, ...]) - self.history_diff_mean), dim=(4,5)), dim=(1,2))
             # reduce across gpus
             if comm.get_size("spatial") > 1:
-                self.history_diff_var = reduce_from_parallel_region(self.history_diff_var, "spatial")
+                self.history_diff_var = reduce_from_parallel_region(self.history_diff_var, comm.get_group("spatial"))
             self.history_diff_var = self.history_diff_var / float(self.img_shape[0] * self.img_shape[1])
 
             # time difference stds
-            self.history_diff_mean = copy_to_parallel_region(self.history_diff_mean, "spatial")
-            self.history_diff_var = copy_to_parallel_region(self.history_diff_var, "spatial")
+            self.history_diff_mean = copy_to_parallel_region(self.history_diff_mean, comm.get_group("spatial"))
+            self.history_diff_var = copy_to_parallel_region(self.history_diff_var, comm.get_group("spatial"))
         else:
             xdim = x.dim()
             if xdim == 4:
@@ -317,14 +317,14 @@ class Preprocessor2D(nn.Module):
             self.history_mean = torch.sum(xr * self.history_normalization_weights, dim=(1, 3, 4), keepdim=True)
             # reduce across gpus
             if comm.get_size("spatial") > 1:
-                self.history_mean = reduce_from_parallel_region(self.history_mean, "spatial")
+                self.history_mean = reduce_from_parallel_region(self.history_mean, comm.get_group("spatial"))
             self.history_mean = self.history_mean / float(self.img_shape[0] * self.img_shape[1])
 
             # compute std
             self.history_std = torch.sum( torch.square(xr - self.history_mean) * self.history_normalization_weights, dim=(1, 3, 4), keepdim=True)
             # reduce across gpus
             if comm.get_size("spatial") > 1:
-                self.history_std = reduce_from_parallel_region(self.history_std, "spatial")
+                self.history_std = reduce_from_parallel_region(self.history_std, comm.get_group("spatial"))
             self.history_std = torch.sqrt(self.history_std / float(self.img_shape[0] * self.img_shape[1]))
                 
             # squeeze
@@ -332,8 +332,8 @@ class Preprocessor2D(nn.Module):
             self.history_std  = torch.squeeze(self.history_std, dim=1)
 
             # copy to parallel region
-            self.history_mean = copy_to_parallel_region(self.history_mean, "spatial")
-            self.history_std  =	copy_to_parallel_region(self.history_std,  "spatial")
+            self.history_mean = copy_to_parallel_region(self.history_mean, comm.get_group("spatial"))
+            self.history_std  =	copy_to_parallel_region(self.history_std,  comm.get_group("spatial"))
 
         return    
     

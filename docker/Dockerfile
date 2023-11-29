@@ -82,6 +82,11 @@ RUN cd /opt && git clone https://github.com/NVIDIA/torch-harmonics.git && \
     cd torch-harmonics && \
     pip install -e .
 
+# modulus
+RUN cd /opt && git clone https://github.com/NVIDIA/modulus.git && \
+    cd modulus && \
+    pip install -e .
+
 # copy source code
 RUN mkdir -p /opt/makani
 COPY config /opt/makani/config
@@ -94,14 +99,13 @@ COPY datasets /opt/makani/datasets
 COPY mpu /opt/makani/mpu
 COPY *.py /opt/makani/
 COPY third_party /opt/makani/third_party
-COPY perf_tests /opt/perf_tests
 COPY tests /opt/makani/tests
 
-# # temporary WAR to enable complex optimization in ADAM
-# # copy custom optimizers to torch
-# COPY third_party/torch/optim/* /usr/local/lib/python3.10/dist-packages/torch/optim/
-# # hack distributed
-# COPY third_party/torch/distributed/* /usr/local/lib/python3.10/dist-packages/torch/distributed/
+# temporary WAR to enable complex optimization in ADAM
+# copy custom optimizers to torch
+COPY third_party/torch/optim/* /usr/local/lib/python3.10/dist-packages/torch/optim/
+# hack distributed
+COPY third_party/torch/distributed/* /usr/local/lib/python3.10/dist-packages/torch/distributed/
 
 # create dummy git image
 RUN cd /opt/makani && git init

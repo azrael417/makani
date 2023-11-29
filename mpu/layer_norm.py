@@ -22,7 +22,7 @@ from typing import Tuple
 
 # for spatial model-parallelism
 from utils import comm
-from mpu.mappings import gather_from_parallel_region, copy_to_parallel_region
+from modulus.distributed.mappings import gather_from_parallel_region, copy_to_parallel_region
 
 class DistributedInstanceNorm2d(nn.Module):
     """
@@ -41,22 +41,22 @@ class DistributedInstanceNorm2d(nn.Module):
         if self.affine:
             self.weight = nn.Parameter(torch.ones(num_features))
             self.bias   = nn.Parameter(torch.zeros(num_features))
-            self.weight.is_shared_mp = ["spatial"] #["h", "w"]
-            self.bias.is_shared_mp   = ["spatial"] #["h", "w"]
+            self.weight.is_shared_mp = ["spatial"]
+            self.bias.is_shared_mp   = ["spatial"]
 
         self.gather_mode = 'welford'
 
     @torch.jit.ignore
     def _gather_hw(self, x: torch.Tensor) -> torch.Tensor:
 	    # gather the data over the spatial communicator
-        xh = gather_from_parallel_region(x, -2, "h")
-        xw = gather_from_parallel_region(xh, -1, "w")
+        xh = gather_from_parallel_region(x, -2, comm.get_group("h"))
+        xw = gather_from_parallel_region(xh, -1, comm.get_group("w"))
         return xw
 
     @torch.jit.ignore
     def _gather_spatial(self, x: torch.Tensor) -> torch.Tensor:
 	    # gather the data over the spatial communicator
-        xs = gather_from_parallel_region(x, -1, "spatial")
+        xs = gather_from_parallel_region(x, -1, comm.get_group("spatial"))
         return xs
 
     def _stats_naive(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -119,8 +119,8 @@ class DistributedInstanceNorm2d(nn.Module):
                 raise ValueError(f"Unknown gather mode {self.gather_mode}")
 
             # this is absolutely necessary to get the correct graph in the backward pass
-            mean = copy_to_parallel_region(mean, "spatial")
-            var = copy_to_parallel_region(var, "spatial")
+            mean = copy_to_parallel_region(mean, comm.get_group("spatial"))
+            var = copy_to_parallel_region(var, comm.get_group("spatial"))
 
         x = x.to(dtype)
         mean = mean.to(dtype)

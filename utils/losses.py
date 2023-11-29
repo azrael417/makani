@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 from utils import comm
 from utils.grids import GridQuadrature
-from mpu.mappings import reduce_from_parallel_region, gather_from_parallel_region
+from modulus.distributed.mappings import reduce_from_parallel_region, gather_from_parallel_region
 
 import torch_harmonics as harmonics
 from torch_harmonics.quadrature import clenshaw_curtiss_weights, legendre_gauss_weights
@@ -143,8 +143,8 @@ class LossHandler(nn.Module):
     def _gather_input(self, x: torch.Tensor) -> torch.Tensor:
         # combine data
         # h
-        xh = gather_from_parallel_region(x, -2, "h")
-        xw = gather_from_parallel_region(xh, -1, "w")
+        xh = gather_from_parallel_region(x, -2, comm.get_group("h"))
+        xw = gather_from_parallel_region(xh, -1, comm.get_group("w"))
     
         # crop
         x = xw[...,

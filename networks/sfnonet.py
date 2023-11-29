@@ -39,7 +39,7 @@ from mpu.layers import DistributedRealFFT2, DistributedInverseRealFFT2, Distribu
 from utils import comm
 
 # layer normalization
-from mpu.mappings import scatter_to_parallel_region, gather_from_parallel_region
+from modulus.distributed.mappings import scatter_to_parallel_region, gather_from_parallel_region
 from mpu.layer_norm import DistributedInstanceNorm2d, DistributedLayerNorm
 
 
@@ -617,7 +617,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
 
     def forward(self, x):
         if comm.get_size("fin") > 1:
-            x = scatter_to_parallel_region(x, "fin", 1)
+            x = scatter_to_parallel_region(x, 1, comm.get_group("fin"))
 
         # save big skip
         if self.big_skip:
@@ -672,7 +672,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
             x = self.decoder(x)
 
         if hasattr(self.decoder, "comm_out_name") and (comm.get_size(self.decoder.comm_out_name) > 1):
-            x = gather_from_parallel_region(x, self.decoder.comm_out_name, 1)
+            x = gather_from_parallel_region(x, 1, comm.get_group(self.decoder.comm_out_name))
 
         if self.big_skip:
             x = x + self.residual_transform(residual)

@@ -22,10 +22,10 @@ from torch.cuda.amp import custom_fwd, custom_bwd
 from utils import comm
 
 # parallel helpers
-from mpu.mappings import reduce_from_parallel_region
-from mpu.mappings import scatter_to_parallel_region
-from mpu.mappings import gather_from_parallel_region
-from mpu.mappings import copy_to_parallel_region
+from modulus.distributed.mappings import reduce_from_parallel_region
+from modulus.distributed.mappings import scatter_to_parallel_region
+from modulus.distributed.mappings import gather_from_parallel_region
+from modulus.distributed.mappings import copy_to_parallel_region
 from mpu.helpers import _transpose
 from mpu.helpers import pad_helper
 from mpu.helpers import truncate_helper 
@@ -358,9 +358,9 @@ class DistributedMatmul(nn.Module):
                 
 
     def forward(self, x):
-        x_cp = copy_to_parallel_region(x, self.comm_out_name)
+        x_cp = copy_to_parallel_region(x, comm.get_group(self.comm_out_name))
         x_loc = self.matmul_handle(x_cp, self.weight, bias=None)
-        x_out = reduce_from_parallel_region(x_loc, self.comm_inp_name)
+        x_out = reduce_from_parallel_region(x_loc, comm.get_group(self.comm_inp_name))
         if self.bias is not None:
             x_out = x_out + self.bias
 
@@ -564,10 +564,10 @@ class DistributedPatchEmbed(nn.Module):
         
     def forward(self, x):
         if self.input_parallel:
-            x = gather_from_parallel_region(x, 1, "matmul")
+            x = gather_from_parallel_region(x, 1, comm.get_group("matmul"))
 
         if self.output_parallel:
-            x = copy_to_parallel_region(x, "matmul")
+            x = copy_to_parallel_region(x, comm.get_group("matmul"))
             
         B, C, H, W = x.shape
         assert H == self.img_size[0] and W == self.img_size[1], f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
@@ -714,7 +714,7 @@ class DistributedAFNO2Dv2(nn.Module):
     def forward(self, x):
         if not self.input_is_matmul_parallel:
             # distribute data
-            x = scatter_to_parallel_region(x, 1, "matmul")
+            x = scatter_to_parallel_region(x, 1, comm.get_group("matmul"))
 
         # bias
         bias = x
@@ -746,6 +746,6 @@ class DistributedAFNO2Dv2(nn.Module):
 
         # gather
         if not self.output_is_matmul_parallel:
-            x = gather_from_parallel_region(x, 1, "matmul")
+            x = gather_from_parallel_region(x, 1, comm.get_group("matmul"))
         
         return x
