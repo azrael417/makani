@@ -84,7 +84,7 @@ if __name__ == '__main__':
     params["save_checkpoint"] = args.save_checkpoint
 
     # make sure to reconfigure logger after the pytorch distributed init
-    comm.init(params, verbose=False)
+    comm.init(params, verbose=True)
 
     # update parameters
     world_rank = comm.get_world_rank()

@@ -29,11 +29,11 @@ from modulus.distributed.config import ProcessGroupNode, ProcessGroupConfig
 DM = None
 
 def get_size(name: str) -> int:
-    return DM.get_group_size(name)
+    return DM.group_size(name)
 
     
 def get_rank(name: str) -> int:
-    return DM.get_group_rank(name)
+    return DM.group_rank(name)
 
     
 def get_group(name: str):
@@ -79,29 +79,30 @@ def init(params, verbose=False):
     model_parallel_names = params.get("model_parallel_names", ["h", "w", "fin", "fout"])
 
     # create process group config:
-    world = ProcessGroupNode('world')
+    world = ProcessGroupNode('world', size=DM.world_size)
     pconfig = ProcessGroupConfig(world)
 
-    # add leaf nodes:
-    # data
-    pconfig.add_node(world, "data")
+    # add nodes:
     # model
-    pconfig.add_node(world, "model")
+    pconfig.add_node(ProcessGroupNode("model"), parent="world")
     # spatial and matmul
-    pconfig.add_node(pconfig.get_node("model"), "spatial")
-    pconfig.add_node(pconfig.get_node("model"), "matmul")
+    pconfig.add_node(ProcessGroupNode("spatial"), parent="model")
+    pconfig.add_node(ProcessGroupNode("matmul"), parent="model")
     # subgroups for spatial
-    pconfig.add_node(pconfig.get_node("spatial"), "h")
-    pconfig.add_node(pconfig.get_node("spatial"), "w")
+    pconfig.add_node(ProcessGroupNode("h"), parent="spatial")
+    pconfig.add_node(ProcessGroupNode("w"), parent="spatial")
     # subgroups for matmul:
-    pconfig.add_node(pconfig.get_node("matmul"), "fin")
-    pconfig.add_node(pconfig.get_node("matmul"), "fout")
+    pconfig.add_node(ProcessGroupNode("fin"), parent="matmul")
+    pconfig.add_node(ProcessGroupNode("fout"), parent="matmul")
+    # add data node last
+    pconfig.add_node(ProcessGroupNode("data"), parent="world")
 
     # set up leaf sizes
     leaf_config = {k: v for k,v in zip(model_parallel_names, model_parallel_sizes)}
+    leaf_config["data"] = DM.world_size // math.prod(leaf_config.values())
     pconfig.set_leaf_group_sizes(leaf_config, update_parent_sizes=True)
 
     # create remaining process groups
-    DM.create_groups_from_config(pconfig, verbose=verbose)
+    DM.create_groups_from_config(pconfig, verbose=(verbose and (DM.rank == 0)))
     
     return DM.group_size("model")
