@@ -358,9 +358,9 @@ class DistributedMatmul(nn.Module):
                 
 
     def forward(self, x):
-        x_cp = copy_to_parallel_region(x, comm.get_group(self.comm_out_name))
+        x_cp = copy_to_parallel_region(x, self.comm_out_name)
         x_loc = self.matmul_handle(x_cp, self.weight, bias=None)
-        x_out = reduce_from_parallel_region(x_loc, comm.get_group(self.comm_inp_name))
+        x_out = reduce_from_parallel_region(x_loc, self.comm_inp_name)
         if self.bias is not None:
             x_out = x_out + self.bias
 
@@ -376,6 +376,7 @@ class DistributedEncoderDecoder(nn.Module):
                  hidden_dim,
                  act_layer,
                  gain = 1.0,
+                 input_format = "nchw",
                  comm_inp_name = "fin",
                  comm_out_name = "fout"):
         super(DistributedEncoderDecoder, self).__init__()
@@ -392,7 +393,7 @@ class DistributedEncoderDecoder(nn.Module):
         for i in range(num_layers-1):
             encoder_modules.append(DistributedMatmul(current_dim,
                                                      hidden_dim,
-                                                     1,
+                                                     input_format=input_format,
                                                      comm_inp_name=comm_inp_name_tmp,
                                                      comm_out_name=comm_out_name_tmp,
                                                      bias=True))
@@ -410,7 +411,7 @@ class DistributedEncoderDecoder(nn.Module):
         # final layer
         encoder_modules.append(DistributedMatmul(current_dim,
                                                  output_dim,
-                                                 1,
+                                                 input_format=input_format,
                                                  comm_inp_name=comm_inp_name_tmp,
                                                  comm_out_name=comm_out_name_tmp,
                                                  bias=False))
@@ -564,10 +565,10 @@ class DistributedPatchEmbed(nn.Module):
         
     def forward(self, x):
         if self.input_parallel:
-            x = gather_from_parallel_region(x, 1, comm.get_group("matmul"))
+            x = gather_from_parallel_region(x, 1, "matmul")
 
         if self.output_parallel:
-            x = copy_to_parallel_region(x, comm.get_group("matmul"))
+            x = copy_to_parallel_region(x, "matmul")
             
         B, C, H, W = x.shape
         assert H == self.img_size[0] and W == self.img_size[1], f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
@@ -714,7 +715,7 @@ class DistributedAFNO2Dv2(nn.Module):
     def forward(self, x):
         if not self.input_is_matmul_parallel:
             # distribute data
-            x = scatter_to_parallel_region(x, 1, comm.get_group("matmul"))
+            x = scatter_to_parallel_region(x, 1, "matmul")
 
         # bias
         bias = x
@@ -746,6 +747,6 @@ class DistributedAFNO2Dv2(nn.Module):
 
         # gather
         if not self.output_is_matmul_parallel:
-            x = gather_from_parallel_region(x, 1, comm.get_group("matmul"))
+            x = gather_from_parallel_region(x, 1, "matmul")
         
         return x

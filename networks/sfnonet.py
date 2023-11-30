@@ -347,6 +347,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
                 output_dim=self.embed_dim,
                 hidden_dim=int(encoder_ratio * self.embed_dim),
                 act_layer=activation_function,
+                input_format = "nchw",
                 comm_inp_name="fin",
                 comm_out_name="fout",
             )
@@ -359,6 +360,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
                 output_dim=self.embed_dim,
                 hidden_dim=int(encoder_ratio * self.embed_dim),
                 act_layer=activation_function,
+                input_format = "nchw"
             )
             fblock_mlp_inp_name = "fin"
             fblock_mlp_hidden_name = "fout"
@@ -456,6 +458,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
                 gain=0.5 if self.big_skip else 1.0,
                 comm_inp_name=comm_inp_name,
                 comm_out_name=comm_out_name,
+                input_format = "nchw",
             )
         else:
             self.decoder = EncoderDecoder(
@@ -465,6 +468,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
                 hidden_dim=int(decoder_ratio * embed_dim),
                 act_layer=activation_function,
                 gain=0.5 if self.big_skip else 1.0,
+                input_format = "nchw",
             )
 
         # output transform
@@ -617,7 +621,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
 
     def forward(self, x):
         if comm.get_size("fin") > 1:
-            x = scatter_to_parallel_region(x, 1, comm.get_group("fin"))
+            x = scatter_to_parallel_region(x, 1, "fin")
 
         # save big skip
         if self.big_skip:
@@ -672,7 +676,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
             x = self.decoder(x)
 
         if hasattr(self.decoder, "comm_out_name") and (comm.get_size(self.decoder.comm_out_name) > 1):
-            x = gather_from_parallel_region(x, 1, comm.get_group(self.decoder.comm_out_name))
+            x = gather_from_parallel_region(x, 1, self.decoder.comm_out_name)
 
         if self.big_skip:
             x = x + self.residual_transform(residual)

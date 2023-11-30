@@ -49,14 +49,14 @@ class DistributedInstanceNorm2d(nn.Module):
     @torch.jit.ignore
     def _gather_hw(self, x: torch.Tensor) -> torch.Tensor:
 	    # gather the data over the spatial communicator
-        xh = gather_from_parallel_region(x, -2, comm.get_group("h"))
-        xw = gather_from_parallel_region(xh, -1, comm.get_group("w"))
+        xh = gather_from_parallel_region(x, -2, "h")
+        xw = gather_from_parallel_region(xh, -1, "w")
         return xw
 
     @torch.jit.ignore
     def _gather_spatial(self, x: torch.Tensor) -> torch.Tensor:
 	    # gather the data over the spatial communicator
-        xs = gather_from_parallel_region(x, -1, comm.get_group("spatial"))
+        xs = gather_from_parallel_region(x, -1, "spatial")
         return xs
 
     def _stats_naive(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -119,8 +119,8 @@ class DistributedInstanceNorm2d(nn.Module):
                 raise ValueError(f"Unknown gather mode {self.gather_mode}")
 
             # this is absolutely necessary to get the correct graph in the backward pass
-            mean = copy_to_parallel_region(mean, comm.get_group("spatial"))
-            var = copy_to_parallel_region(var, comm.get_group("spatial"))
+            mean = copy_to_parallel_region(mean, "spatial")
+            var = copy_to_parallel_region(var, "spatial")
 
         x = x.to(dtype)
         mean = mean.to(dtype)

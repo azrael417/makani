@@ -90,14 +90,20 @@ class EncoderDecoder(nn.Module):
                  output_dim,
                  hidden_dim,
                  act_layer,
-                 gain = 1.0):
+                 gain = 1.0,
+                 input_format = "nchw"):
         super(EncoderDecoder, self).__init__()
         
         encoder_modules = []
         current_dim = input_dim
         for i in range(num_layers):
             # fully connected layer
-            encoder_modules.append(nn.Conv2d(current_dim, hidden_dim, 1, bias=True))
+            if input_format == "nchw":
+                encoder_modules.append(nn.Conv2d(current_dim, hidden_dim, 1, bias=True))
+            elif input_format == "traditional":
+                encoder_modules.append(nn.Linear(current_dim, hidden_dim, bias=True))
+            else:
+                raise NotImplementedError(f"Error, input format {input_format} not supported.")
 
             # proper initializaiton
             scale = math.sqrt(2.0 / current_dim)
@@ -109,7 +115,11 @@ class EncoderDecoder(nn.Module):
             current_dim = hidden_dim
 
         # final output layer
-        encoder_modules.append(nn.Conv2d(current_dim, output_dim, 1, bias=False))
+        if input_format == "nchw":
+            encoder_modules.append(nn.Conv2d(current_dim, output_dim, 1, bias=False))
+        elif input_format == "traditional":
+            encoder_modules.append(nn.Linear(current_dim, output_dim, bias=False))
+            
 
         # proper initializaiton
         scale = math.sqrt(gain / current_dim)

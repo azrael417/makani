@@ -26,42 +26,48 @@ from modulus.distributed.manager import DistributedManager
 from modulus.distributed.config import ProcessGroupNode, ProcessGroupConfig
 
 # we need this
-DM = None
+_DM = None
+_COMM_ROOTS = {}
 
 def get_size(name: str) -> int:
-    return DM.group_size(name)
+    return _DM.group_size(name)
 
     
 def get_rank(name: str) -> int:
-    return DM.group_rank(name)
+    return _DM.group_rank(name)
 
     
 def get_group(name: str):
-    return DM.group(name)
+    return _DM.group(name)
 
-# TODO: we need this
-#def get_root(comm_id: Union[str, int]) -> int:
-#    DM.
 
+def get_root(name: str) -> int:
+    
+    if name in _COMM_ROOTS:
+        return _COMM_ROOTS[name]
+    else:
+        return 0
+
+    
 # specialized routines for world comms
 def get_world_size():
-    return DM.world_size
+    return _DM.world_size
 
     
 def get_world_rank():
-    return DM.rank
+    return _DM.rank
 
 
 def get_local_rank():
-    return DM.local_rank
+    return _DM.local_rank
 
 
 def get_names():
-    return DM.group_names
+    return [name for name in _DM.group_names if (not name.startswith("__orthogonal_to"))]
 
 
 def is_distributed(name: str):
-    return (name in DM.group_names)
+    return (name in _DM.group_names)
 
 
 # get 
@@ -71,15 +77,15 @@ def init(params, verbose=False):
     DistributedManager.initialize()
     
     # extract manager object
-    global DM
-    DM = DistributedManager()
+    global _DM
+    _DM = DistributedManager()
 
     # do individual wireup for model parallel comms:
     model_parallel_sizes = params.get("model_parallel_sizes", [1, 1, 1, 1])
     model_parallel_names = params.get("model_parallel_names", ["h", "w", "fin", "fout"])
 
     # create process group config:
-    world = ProcessGroupNode('world', size=DM.world_size)
+    world = ProcessGroupNode('world', size=_DM.world_size)
     pconfig = ProcessGroupConfig(world)
 
     # add nodes:
@@ -99,10 +105,27 @@ def init(params, verbose=False):
 
     # set up leaf sizes
     leaf_config = {k: v for k,v in zip(model_parallel_names, model_parallel_sizes)}
-    leaf_config["data"] = DM.world_size // math.prod(leaf_config.values())
+    leaf_config["data"] = _DM.world_size // math.prod(leaf_config.values())
     pconfig.set_leaf_group_sizes(leaf_config, update_parent_sizes=True)
 
     # create remaining process groups
-    DM.create_groups_from_config(pconfig, verbose=(verbose and (DM.rank == 0)))
+    _DM.create_groups_from_config(pconfig, verbose=(verbose and (_DM.rank == 0)))
+
+    # get comm roots:
+    global _COMM_ROOTS
+    for gname in get_names():
+        rank = _DM.rank
+        for grp in _DM._group_ranks[gname]:
+            if rank in grp:
+                _COMM_ROOTS[gname] = min(grp)
+
+    # print debug
+    #import torch
+    #for rank in range(_DM.world_size):
+    #    if rank == _DM.rank:
+    #        print(f"{rank}: groups:")
+    #        for gname in get_names():
+    #            print(f"\t{gname}: {_DM._group_ranks[gname]}, root={_COMM_ROOTS[gname]}")
+    #    torch.distributed.barrier(device_ids=[_DM.local_rank])
     
-    return DM.group_size("model")
+    return _DM.group_size("model")
