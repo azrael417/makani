@@ -78,7 +78,6 @@ def main(args):
                                "param": "131/132/135.128/129.128/130.128/133.128",
                                'date': f'{year_str}-{month_str}-01/to/{year_str}-{month_str}-31',
                                'time': timestamps,
-                               ],
                            },
                            file_str)
 
@@ -103,7 +102,7 @@ def main(args):
                            'grid': [args.resolution, args.resolution],
                            'format': 'netcdf',
                            'date': f'{year_str}-{month_str}-01/to/{year_str}-{month_str}-31',
-                           'time': timestamps
+                           'time': timestamps,
                            # 10u, 10v, 100u, 100v, 2t, sp, msl, tcvw
                            "param": "165.128/166.128/246.228/247.228/167.128/134.128/151.128/137.128",
                        }, file_str)
