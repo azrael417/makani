@@ -28,6 +28,9 @@ from utils import comm
 # for grid conversion
 from utils.grids import GridConverter
 
+# we need this
+from torch_harmonics.distributed import compute_split_shapes
+
 class DummyLoader(object):
     def __init__(self,
                  params,
@@ -118,23 +121,25 @@ class DummyLoader(object):
         assert( self.img_crop_offset_y + self.img_crop_shape_y <= self.img_shape_y )
         
         # for x
-        read_shape_x = (self.img_crop_shape_x + self.io_grid[0] - 1) // self.io_grid[0]
+        #read_shape_x = (self.img_crop_shape_x + self.io_grid[0] - 1) // self.io_grid[0]
+        read_shape_x = compute_split_shapes(self.crop_size[0], self.io_grid[0])[self.io_rank[0]]
         read_anchor_x = self.img_crop_offset_x + read_shape_x * self.io_rank[0]
-        read_shape_x = min(read_shape_x, self.img_shape_x - read_anchor_x)
+        #read_shape_x = min(read_shape_x, self.img_shape_x - read_anchor_x)
         # for y
-        read_shape_y = (self.img_crop_shape_y + self.io_grid[1] - 1) // self.io_grid[1]
+        #read_shape_y = (self.img_crop_shape_y + self.io_grid[1] - 1) // self.io_grid[1]
+        read_shape_y = compute_split_shapes(self.crop_size[1], self.io_grid[1])[self.io_rank[1]]
         read_anchor_y = self.img_crop_offset_y + read_shape_y * self.io_rank[1]
-        read_shape_y = min(read_shape_y, self.img_shape_y - read_anchor_y)
+        #read_shape_y = min(read_shape_y, self.img_shape_y - read_anchor_y)
 
         # compute padding
-        self.img_local_pad_x = (self.img_crop_shape_x + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
-        self.img_local_pad_y = (self.img_crop_shape_y + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
+        #self.img_local_pad_x = (self.img_crop_shape_x + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
+        #self.img_local_pad_y = (self.img_crop_shape_y + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
 
         # store exposed variables
         self.img_local_offset_x = read_anchor_x
         self.img_local_offset_y = read_anchor_y
-        self.img_local_shape_x = read_shape_x + self.img_local_pad_x
-        self.img_local_shape_y = read_shape_y +	self.img_local_pad_y
+        self.img_local_shape_x = read_shape_x #+ self.img_local_pad_x
+        self.img_local_shape_y = read_shape_y #+ self.img_local_pad_y
         
         # sharding
         self.n_samples_total = self.n_samples_per_epoch if self.n_samples_per_epoch is not None else self.n_years * self.n_samples_per_year
