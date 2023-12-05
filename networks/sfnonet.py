@@ -453,6 +453,8 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
                 comm_out_name=comm_out_name,
                 input_format = "nchw",
             )
+            self.gather_shapes = compute_split_shapes(self.out_chans,
+                                                      comm.get_size(self.decoder.comm_out_name))
         else:
             self.decoder = EncoderDecoder(
                 num_layers=encoder_layers,
@@ -633,7 +635,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
             x = self.decoder(x)
 
         if hasattr(self.decoder, "comm_out_name") and (comm.get_size(self.decoder.comm_out_name) > 1):
-            x = gather_from_parallel_region(x, 1, None, self.decoder.comm_out_name)
+            x = gather_from_parallel_region(x, 1, self.gather_shapes, self.decoder.comm_out_name)
 
         if self.big_skip:
             x = x + self.residual_transform(residual)

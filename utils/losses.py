@@ -143,9 +143,9 @@ class LossHandler(nn.Module):
     def _gather_input(self, x: torch.Tensor) -> torch.Tensor:
         # combine data
         # h
-        h_shapes = compute_split_shapes(self.crop_shape[0], DistributedManager().group_size("h"))
+        h_shapes = compute_split_shapes(self.crop_shape[0], comm.get_size("h"))
         xh = gather_from_parallel_region(x, -2, h_shapes, "h")
-        w_shapes = compute_split_shapes(self.crop_shape[1], DistributedManager().group_size("w"))
+        w_shapes = compute_split_shapes(self.crop_shape[1], comm.get_size("w"))
         x = gather_from_parallel_region(xh, -1, w_shapes, "w")
     
         # crop

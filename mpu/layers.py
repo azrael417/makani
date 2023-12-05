@@ -486,10 +486,13 @@ class DistributedPatchEmbed(nn.Module):
         # make sure we reduce them across rank
         self.proj.weight.is_shared_mp = ["spatial"] #["h", "w"]
         self.proj.bias.is_shared_mp = ["spatial"] #["h", "w"]
+
+        # gather shapes
+        self.gather_shapes = compute_split_shapes(in_chans, comm.get_size("matmul"))
         
     def forward(self, x):
         if self.input_parallel:
-            x = gather_from_parallel_region(x, 1, None, "matmul")
+            x = gather_from_parallel_region(x, 1, self.gather_shapes, "matmul")
 
         if self.output_parallel:
             x = copy_to_parallel_region(x, "matmul")
@@ -611,8 +614,9 @@ class DistributedAFNO2Dv2(nn.Module):
         self.hidden_size = hidden_size
         self.sparsity_threshold = sparsity_threshold
         self.num_blocks = num_blocks
-        assert (self.num_blocks % matmul_comm_size == 0), "Error, num_blocks needs to be divisible by matmul_parallel_size"
-        self.num_blocks_local = self.num_blocks // matmul_comm_size
+        #assert (self.num_blocks % matmul_comm_size == 0), "Error, num_blocks needs to be divisible by matmul_parallel_size"
+        self.gather_shapes = compute_split_shapes(self.num_blocks, matmul_comm_size)
+        self.num_blocks_local = self.gather_shapes[comm.get_rank("matmul")]
         self.block_size = self.hidden_size // self.num_blocks
         self.hard_thresholding_fraction = hard_thresholding_fraction
         self.hidden_size_factor = hidden_size_factor
@@ -671,6 +675,6 @@ class DistributedAFNO2Dv2(nn.Module):
 
         # gather
         if not self.output_is_matmul_parallel:
-            x = gather_from_parallel_region(x, 1, None, "matmul")
+            x = gather_from_parallel_region(x, 1, self.gather_shapes, "matmul")
         
         return x
