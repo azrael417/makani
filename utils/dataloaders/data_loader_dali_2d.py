@@ -78,13 +78,13 @@ class ERA5DaliESDataloader(object):
                 tzen = tzen.gpu()
 
             # pad if requested:
-            if ( (self.extsource.read_pad[0] > 0) or (self.extsource.read_pad[1] > 0) ):
-                padded_shape = [self.img_local_shape_x, self.img_local_shape_y]
-                inp = fn.pad(inp, axis_names="HW", shape=padded_shape, device="gpu")
-                tar = fn.pad(tar, axis_names="HW", shape=padded_shape, device="gpu")
-                if self.add_zenith:
-                    izen = fn.pad(izen, axis_names="HW", shape=padded_shape, device="gpu")
-                    tzen = fn.pad(tzen, axis_names="HW", shape=padded_shape, device="gpu")
+            #if ( (self.extsource.read_pad[0] > 0) or (self.extsource.read_pad[1] > 0) ):
+            #    padded_shape = [self.img_local_shape_x, self.img_local_shape_y]
+            #    inp = fn.pad(inp, axis_names="HW", shape=padded_shape, device="gpu")
+            #    tar = fn.pad(tar, axis_names="HW", shape=padded_shape, device="gpu")
+            #    if self.add_zenith:
+            #        izen = fn.pad(izen, axis_names="HW", shape=padded_shape, device="gpu")
+            #        tzen = fn.pad(tzen, axis_names="HW", shape=padded_shape, device="gpu")
 
             # roll if requested
             if self.train and self.roll:
@@ -253,13 +253,13 @@ class ERA5DaliESDataloader(object):
         self.img_crop_offset_x = self.extsource.crop_anchor[0]
         self.img_crop_offset_y = self.extsource.crop_anchor[1]
         
-        self.img_local_shape_x = self.extsource.read_shape[0] + self.extsource.read_pad[0]
-        self.img_local_shape_y = self.extsource.read_shape[1] + self.extsource.read_pad[1]
+        self.img_local_shape_x = self.extsource.read_shape[0] #+ self.extsource.read_pad[0]
+        self.img_local_shape_y = self.extsource.read_shape[1] #+ self.extsource.read_pad[1]
         self.img_local_offset_x = self.extsource.read_anchor[0]
         self.img_local_offset_y = self.extsource.read_anchor[1]
 
-        self.img_local_pad_x = self.extsource.read_pad[0]
-        self.img_local_pad_y = self.extsource.read_pad[1]
+        #self.img_local_pad_x = self.extsource.read_pad[0]
+        #self.img_local_pad_y = self.extsource.read_pad[1]
 
         # num steps
         self.num_steps_per_epoch = self.extsource.num_steps_per_epoch        

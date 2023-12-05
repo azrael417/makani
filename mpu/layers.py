@@ -26,42 +26,11 @@ from modulus.distributed.mappings import reduce_from_parallel_region
 from modulus.distributed.mappings import scatter_to_parallel_region
 from modulus.distributed.mappings import gather_from_parallel_region
 from modulus.distributed.mappings import copy_to_parallel_region
-#from mpu.helpers import _transpose
+
+# use some distributed routines from torch harmonics
 from torch_harmonics.distributed import compute_split_shapes
 from torch_harmonics.distributed import distributed_transpose_azimuth, distributed_transpose_polar \
     as distributed_transpose_w, distributed_transpose_h
-
-#class distributed_transpose_w(torch.autograd.Function):
-#
-#    @staticmethod
-#    def forward(ctx, x, dim):
-#        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("w"))
-#        x = torch.cat(xlist, dim=dim[1])
-#        ctx.dim = dim
-#        return x
-#
-#    @staticmethod
-#    def backward(ctx, go):
-#        dim = ctx.dim
-#        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("w"))
-#        gi = torch.cat(gilist, dim=dim[0])
-#        return gi, None
-   
-#class distributed_transpose_h(torch.autograd.Function):
-#
-#    @staticmethod
-#    def forward(ctx, x, dim):
-#        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("h"))
-#        x = torch.cat(xlist, dim=dim[1])
-#        ctx.dim = dim
-#        return x
-#
-#    @staticmethod
-#    def backward(ctx, go):
-#        dim = ctx.dim
-#        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("h"))
-#        gi = torch.cat(gilist, dim=dim[0])
-#        return gi, None
 
 
 class DistributedRealFFT2(nn.Module):
@@ -520,7 +489,7 @@ class DistributedPatchEmbed(nn.Module):
         
     def forward(self, x):
         if self.input_parallel:
-            x = gather_from_parallel_region(x, 1, "matmul")
+            x = gather_from_parallel_region(x, 1, None, "matmul")
 
         if self.output_parallel:
             x = copy_to_parallel_region(x, "matmul")
@@ -702,6 +671,6 @@ class DistributedAFNO2Dv2(nn.Module):
 
         # gather
         if not self.output_is_matmul_parallel:
-            x = gather_from_parallel_region(x, 1, "matmul")
+            x = gather_from_parallel_region(x, 1, None, "matmul")
         
         return x

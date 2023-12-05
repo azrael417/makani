@@ -24,7 +24,10 @@ RUN apt remove cmake -y && \
     pip install cmake --upgrade
 
 # install mpi4py
-RUN pip install mpi4py
+#RUN pip install mpi4py
+RUN git clone -b 3.1.5 --single-branch https://github.com/mpi4py/mpi4py.git && \
+    cd mpi4py && \
+    python setup.py install
 
 # hdf5
 RUN cd /tmp && wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.14/hdf5-1.14.2/src/hdf5-1.14.2.tar.gz && \
@@ -39,7 +42,8 @@ RUN cd /tmp && wget https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.14/hdf
     make -j 8 && make install
 
 # h5py
-RUN CC="mpicc" HDF5_MPI="ON" HDF5_DIR=/opt/hdf5 pip install --no-binary=h5py h5py
+#RUN CC="mpicc" HDF5_MPI="ON" HDF5_DIR=/opt/hdf5 pip install --no-binary=h5py h5py
+RUN CC="mpicc" HDF5_MPI="OFF" HDF5_DIR=/opt/hdf5 pip install --no-binary=h5py h5py
 
 # install zarr
 RUN pip install zarr netCDF4 xarray pandas
@@ -77,13 +81,16 @@ RUN cd /opt && git clone https://github.com/tensorly/torch tensorly-torch && \
     pip install -e .
 
 # torch-harmonics
-ENV HARMONICS_VERSION 0.60.4
-RUN cd /opt && git clone https://github.com/NVIDIA/torch-harmonics.git && \
+ENV HARMONICS_VERSION 0.6.4
+#RUN cd /opt && git clone https://github.com/NVIDIA/torch-harmonics.git && \
+#    cd torch-harmonics && \
+#    pip install -e .
+RUN cd /opt && git clone -b tkurth/flexible-sharding https://github.com/azrael417/torch-harmonics.git && \
     cd torch-harmonics && \
     pip install -e .
 
 # modulus
-RUN cd /opt && git clone https://github.com/NVIDIA/modulus.git && \
+RUN cd /opt && git clone -b tkurth/extended-distributed-primitives https://github.com/azrael417/modulus.git && \
     cd modulus && \
     pip install -e .
 

@@ -109,9 +109,9 @@ def get_dataloader(params, files_pattern, device, train=True, final_eval=False):
                                         img_local_shape_x=dataloader.img_local_shape_x,
                                         img_local_shape_y=dataloader.img_local_shape_y,
                                         img_local_offset_x=dataloader.img_local_offset_x,
-                                        img_local_offset_y=dataloader.img_local_offset_y,
-                                        img_local_pad_x=dataloader.img_local_pad_x,
-                                        img_local_pad_y=dataloader.img_local_pad_y)
+                                        img_local_offset_y=dataloader.img_local_offset_y)
+                                        #img_local_pad_x=dataloader.img_local_pad_x,
+                                        #img_local_pad_y=dataloader.img_local_pad_y)
 
         # not needed for the no multifiles case
         sampler = None
@@ -134,9 +134,9 @@ def get_dataloader(params, files_pattern, device, train=True, final_eval=False):
                                         img_local_shape_x=dataloader.img_local_shape_x,
                                         img_local_shape_y=dataloader.img_local_shape_y,
                                         img_local_offset_x=dataloader.img_local_offset_x,
-                                        img_local_offset_y=dataloader.img_local_offset_y,
-                                        img_local_pad_x=dataloader.img_local_pad_x,
-                                        img_local_pad_y=dataloader.img_local_pad_y)
+                                        img_local_offset_y=dataloader.img_local_offset_y)
+                                        #img_local_pad_x=dataloader.img_local_pad_x,
+                                        #img_local_pad_y=dataloader.img_local_pad_y)
 
         if params.enable_benchy and train:
             from benchy.torch import BenchmarkGenericIteratorWrapper

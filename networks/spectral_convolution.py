@@ -84,17 +84,13 @@ class SpectralConv(nn.Module):
             weight_shape += [out_channels]
 
         if isinstance(self.inverse_transform, thd.DistributedInverseRealSHT):
-            self.modes_lat_local = self.inverse_transform.lmax_local
-            self.modes_lon_local = self.inverse_transform.mmax_local
-            self.lpad_local = self.inverse_transform.lpad_local
-            self.mpad_local = self.inverse_transform.mpad_local
-            self.nlat_local = self.inverse_transform.nlat_local
-            self.nlon_local = self.inverse_transform.nlon_local
+            self.modes_lat_local = self.inverse_transform.l_shapes[comm.get_rank("h")]
+            self.modes_lon_local = self.inverse_transform.m_shapes[comm.get_rank("w")]
+            self.nlat_local = self.inverse_transform.lat_shapes[comm.get_rank("h")]
+            self.nlon_local = self.inverse_transform.lon_shapes[comm.get_rank("w")]
         else:
             self.modes_lat_local = self.modes_lat
             self.modes_lon_local = self.modes_lon
-            self.lpad = 0
-            self.mpad = 0
             self.nlat_local = self.inverse_transform.nlat
             self.nlon_local = self.inverse_transform.nlon
 
@@ -147,9 +143,10 @@ class SpectralConv(nn.Module):
                 residual = residual.to(dtype)
 
         # approach with unpadded weights
-        xp = torch.zeros(x.shape[0], self.out_channels, self.modes_lat_local, self.modes_lon_local, dtype=x.dtype, device=x.device)
-        xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(x[..., :self.modes_lat_local, :self.modes_lon_local],
-                                                                               self.weight, separable=self.separable, operator_type=self.operator_type)
+        #xp = torch.zeros(x.shape[0], self.out_channels, self.modes_lat_local, self.modes_lon_local, dtype=x.dtype, device=x.device)
+        #xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(x[..., :self.modes_lat_local, :self.modes_lon_local],
+        #                                                                       self.weight, separable=self.separable, operator_type=self.operator_type)
+        xp = self._contract(x, self.weight, separable=self.separable, operator_type=self.operator_type)
         x = xp.contiguous()
 
         with amp.autocast(enabled=False):
@@ -215,15 +212,11 @@ class FactorizedSpectralConv(nn.Module):
             weight_shape += [out_channels]
 
         if isinstance(self.inverse_transform, thd.DistributedInverseRealSHT):
-            self.modes_lat_local = self.inverse_transform.lmax_local
-            self.modes_lon_local = self.inverse_transform.mmax_local
-            self.lpad_local = self.inverse_transform.lpad_local
-            self.mpad_local = self.inverse_transform.mpad_local
+            self.modes_lat_local = self.inverse_transform.l_shapes[comm.get_rank("h")]
+            self.modes_lon_local = self.inverse_transform.m_shapes[comm.get_rank("w")]
         else:
             self.modes_lat_local = self.modes_lat
             self.modes_lon_local = self.modes_lon
-            self.lpad = 0
-            self.mpad = 0
 
         # unpadded weights
         if self.operator_type == 'diagonal':
@@ -267,17 +260,20 @@ class FactorizedSpectralConv(nn.Module):
                 residual = residual.to(dtype)
 
         # approach with unpadded weights
-        xp = torch.zeros(x.shape[0], self.out_channels, self.modes_lat_local, self.modes_lon_local, dtype=x.dtype, device=x.device)
+        #xp = torch.zeros(x.shape[0], self.out_channels, self.modes_lat_local, self.modes_lon_local, dtype=x.dtype, device=x.device)
 
         if self.operator_type == 'rank':
-            xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(
-                    x[..., :self.modes_lat_local, :self.modes_lon_local],
-                    self.weight,
-                    self.lat_weight,
-                    self.lon_weight)
+            #xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(
+            #        x[..., :self.modes_lat_local, :self.modes_lon_local],
+            #        self.weight,
+            #        self.lat_weight,
+            #        self.lon_weight)
+            xp = self._contract(x, self.weight, self.lat_weight, self.lon_weight)
         else:
-            xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(x[..., :self.modes_lat_local, :self.modes_lon_local],
-                                                                                   self.weight, separable=self.separable, operator_type=self.operator_type)
+            #xp[..., :self.modes_lat_local, :self.modes_lon_local] = self._contract(x[..., :self.modes_lat_local, :self.modes_lon_local],
+            #                                                                       self.weight, separable=self.separable, operator_type=self.operator_type)
+            xp = self._contract(x, self.weight, separable=self.separable, operator_type=self.operator_type)
+            
         x = xp.contiguous()
 
         with amp.autocast(enabled=False):

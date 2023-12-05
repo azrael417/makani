@@ -30,6 +30,9 @@ from bisect import bisect_right
 # for nvtx annotation
 import torch
 
+# import splitting logic
+from torch_harmonics.distributed import compute_split_shapes
+
 # we need this for the zenith angle feature
 import datetime
 
@@ -262,20 +265,22 @@ class GeneralES(object):
         assert( self.crop_anchor[0] + self.crop_size[0] <= self.img_shape[0] )
         assert( self.crop_anchor[1] + self.crop_size[1] <= self.img_shape[1] )
         # for x
-        read_shape_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0]
+        #read_shape_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0]
+        read_shape_x = compute_split_shapes(self.crop_size[0], self.io_grid[0])[self.io_rank[0]]
         read_anchor_x = self.crop_anchor[0] + read_shape_x * self.io_rank[0]
-        read_shape_x = min(read_shape_x, self.img_shape[0] - read_anchor_x)
+        #read_shape_x = min(read_shape_x, self.img_shape[0] - read_anchor_x)
         # for y
-        read_shape_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1]
+        #read_shape_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1]
+        read_shape_y = compute_split_shapes(self.crop_size[1], self.io_grid[1])[self.io_rank[1]]
         read_anchor_y = self.crop_anchor[1] + read_shape_y * self.io_rank[1]
-        read_shape_y = min(read_shape_y, self.img_shape[1] - read_anchor_y)
+        #read_shape_y = min(read_shape_y, self.img_shape[1] - read_anchor_y)
         self.read_anchor = [read_anchor_x, read_anchor_y]
         self.read_shape = [read_shape_x, read_shape_y]
 
         # compute padding
-        read_pad_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
-        read_pad_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
-        self.read_pad = [read_pad_x, read_pad_y]
+        #read_pad_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
+        #read_pad_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
+        #self.read_pad = [read_pad_x, read_pad_y]
                 
         # do some sample indexing gymnastics
         self.year_offsets = list(accumulate(self.n_samples_year, operator.add))[:-1]

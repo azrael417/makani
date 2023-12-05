@@ -44,28 +44,11 @@ class DistributedInstanceNorm2d(nn.Module):
             self.weight.is_shared_mp = ["spatial"]
             self.bias.is_shared_mp   = ["spatial"]
 
-        self.gather_mode = 'welford'
-
-    @torch.jit.ignore
-    def _gather_hw(self, x: torch.Tensor) -> torch.Tensor:
-	    # gather the data over the spatial communicator
-        xh = gather_from_parallel_region(x, -2, "h")
-        xw = gather_from_parallel_region(xh, -1, "w")
-        return xw
-
     @torch.jit.ignore
     def _gather_spatial(self, x: torch.Tensor) -> torch.Tensor:
-	    # gather the data over the spatial communicator
-        xs = gather_from_parallel_region(x, -1, "spatial")
+	# gather the data over the spatial communicator
+        xs = gather_from_parallel_region(x, -1, None, "spatial")
         return xs
-
-    def _stats_naive(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Computes the statistics in the naive way by first gathering the tensors and then computing them"""
-    
-        x = self._gather_hw(x)
-        var, mean = torch.var_mean(x, dim=(-2,-1), unbiased=False, keepdim=True)
-
-        return var, mean
 
     def _stats_welford(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes the statistics locally, then uses the Welford online algorithm to reduce them"""
@@ -111,12 +94,7 @@ class DistributedInstanceNorm2d(nn.Module):
             x = x.float()
 
             # start by computing std and mean
-            if self.gather_mode == 'naive':
-                var, mean = self._stats_naive(x)
-            elif self.gather_mode == 'welford':
-                var, mean = self._stats_welford(x)
-            else:
-                raise ValueError(f"Unknown gather mode {self.gather_mode}")
+            var, mean = self._stats_welford(x)
 
             # this is absolutely necessary to get the correct graph in the backward pass
             mean = copy_to_parallel_region(mean, "spatial")

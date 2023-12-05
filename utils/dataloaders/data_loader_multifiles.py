@@ -31,6 +31,9 @@ import datetime
 # for grid conversion
 from utils.grids import GridConverter
 
+# import splitting logic
+from torch_harmonics.distributed import compute_split_shapes
+
 class MultifilesDataset(Dataset):
     def __init__(self,
                  params,
@@ -157,20 +160,22 @@ class MultifilesDataset(Dataset):
         assert( self.crop_anchor[0] + self.crop_size[0] <= self.img_shape[0] )
         assert( self.crop_anchor[1] + self.crop_size[1] <= self.img_shape[1] )
         # for x
-        read_shape_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0]
+        #read_shape_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0]
+        read_shape_x = compute_split_shapes(self.crop_size[0], self.io_grid[0])[self.io_rank[0]]
         read_anchor_x = self.crop_anchor[0] + read_shape_x * self.io_rank[0]
-        read_shape_x = min(read_shape_x, self.img_shape[0] - read_anchor_x)
+        #read_shape_x = min(read_shape_x, self.img_shape[0] - read_anchor_x)
         # for y
-        read_shape_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1]
+        #read_shape_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1]
+        read_shape_y = compute_split_shapes(self.crop_size[1], self.io_grid[1])[self.io_rank[1]]
         read_anchor_y = self.crop_anchor[1] + read_shape_y * self.io_rank[1]
-        read_shape_y = min(read_shape_y, self.img_shape[1] - read_anchor_y)
+        #read_shape_y = min(read_shape_y, self.img_shape[1] - read_anchor_y)
         self.read_anchor = [read_anchor_x, read_anchor_y]
         self.read_shape = [read_shape_x, read_shape_y]
 
         # compute padding
-        read_pad_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
-        read_pad_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
-        self.read_pad = [read_pad_x, read_pad_y]
+        #read_pad_x = (self.crop_size[0] + self.io_grid[0] - 1) // self.io_grid[0] - read_shape_x
+        #read_pad_y = (self.crop_size[1] + self.io_grid[1] - 1) // self.io_grid[1] - read_shape_y
+        #self.read_pad = [read_pad_x, read_pad_y]
 
         # do some sample indexing gymnastics
         self.year_offsets = list(accumulate(self.n_samples_year, operator.add))[:-1]
@@ -194,13 +199,13 @@ class MultifilesDataset(Dataset):
         self.img_crop_offset_x = self.crop_anchor[0]
         self.img_crop_offset_y = self.crop_anchor[1]
         
-        self.img_local_shape_x = self.read_shape[0] + self.read_pad[0]
-        self.img_local_shape_y = self.read_shape[1] + self.read_pad[1]
+        self.img_local_shape_x = self.read_shape[0] #+ self.read_pad[0]
+        self.img_local_shape_y = self.read_shape[1] #+ self.read_pad[1]
         self.img_local_offset_x = self.read_anchor[0]
         self.img_local_offset_y = self.read_anchor[1]
 
-        self.img_local_pad_x = self.read_pad[0]
-        self.img_local_pad_y = self.read_pad[1]
+        #self.img_local_pad_x = self.read_pad[0]
+        #self.img_local_pad_y = self.read_pad[1]
 
     def _compute_zenith_angle(self, local_idx, year_idx):
 
@@ -270,9 +275,9 @@ class MultifilesDataset(Dataset):
         inp = np.concatenate(inp_list, axis=0)
         tar = np.concatenate(tar_list, axis=0)
 
-        if (self.read_pad[0] > 0) or (self.read_pad[1] > 0):
-            inp = np.pad(inp, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
-            tar = np.pad(tar, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
+        #if (self.read_pad[0] > 0) or (self.read_pad[1] > 0):
+        #    inp = np.pad(inp, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
+        #    tar = np.pad(tar, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
         
         if self.add_zenith:
             year_idx = bisect_right(self.year_offsets, global_idx) - 1
@@ -280,9 +285,9 @@ class MultifilesDataset(Dataset):
 
             zen_inp, zen_tar = self._compute_zenith_angle(local_idx, year_idx)
 
-            if (self.read_pad[0] > 0) or (self.read_pad[1] > 0):
-                zen_inp = np.pad(zen_inp, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
-                zen_tar = np.pad(zen_tar, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
+            #if (self.read_pad[0] > 0) or (self.read_pad[1] > 0):
+            #    zen_inp = np.pad(zen_inp, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
+            #    zen_tar = np.pad(zen_tar, [(0,0), (0,0), (0, self.read_pad[0]), (0, self.read_pad[1])])
             
             result = inp, tar, zen_inp, zen_tar
         else:

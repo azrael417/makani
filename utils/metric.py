@@ -132,12 +132,14 @@ class MetricsHandler():
     def _gather_input(self, x: torch.Tensor) -> torch.Tensor:
         """gather and crop the data"""
 
-        xh = gather_from_parallel_region(x, -2, "h")
-        xw = gather_from_parallel_region(xh, -1, "w")
+        h_shapes = compute_split_shapes(self.crop_shape[0], DistributedManager().group_size("h"))
+        xh = gather_from_parallel_region(x, -2, h_shapes, "h")
+        w_shapes = compute_split_shapes(self.crop_shape[1], DistributedManager().group_size("w"))
+        x = gather_from_parallel_region(xh, -1, w_shapes, "w")
         
-        x = xw[...,
-               self.crop_offset[0]:self.crop_offset[0]+self.crop_shape[0],
-               self.crop_offset[1]:self.crop_offset[1]+self.crop_shape[1]]
+        #x = xw[...,
+        #       self.crop_offset[0]:self.crop_offset[0]+self.crop_shape[0],
+        #       self.crop_offset[1]:self.crop_offset[1]+self.crop_shape[1]]
         
         return x
             

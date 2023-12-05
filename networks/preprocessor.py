@@ -73,10 +73,10 @@ class Preprocessor2D(nn.Module):
         # needed for sharding
         start_x = params.img_local_offset_x
         end_x = min(start_x + params.img_local_shape_x, params.img_shape_x)
-        pad_x = params.img_local_shape_x - (end_x - start_x)
+        #pad_x = params.img_local_shape_x - (end_x - start_x)
         start_y = params.img_local_offset_y
         end_y = min(start_y + params.img_local_shape_y, params.img_shape_y)
-        pad_y =	params.img_local_shape_y - (end_y - start_y)
+        #pad_y =	params.img_local_shape_y - (end_y - start_y)
 
         # set up grid
         if params.add_grid:
@@ -103,7 +103,7 @@ class Preprocessor2D(nn.Module):
                 grid = grid[:, :, start_x:end_x, start_y:end_y]
 
                 # pad if needed
-                grid = F.pad(grid, [0, pad_y, 0, pad_x])
+                #grid = F.pad(grid, [0, pad_y, 0, pad_x])
 
                 # transform if requested
                 if params.gridtype == "sinusoidal":
@@ -136,7 +136,7 @@ class Preprocessor2D(nn.Module):
                 oro = oro[:, :, start_x:end_x, start_y:end_y]
 
                 # pad if needed
-                oro = F.pad(oro, [0, pad_y, 0, pad_x])
+                #oro = F.pad(oro, [0, pad_y, 0, pad_x])
             
                 if static_features is None:
                     static_features = oro
@@ -155,7 +155,7 @@ class Preprocessor2D(nn.Module):
                 lsm = lsm[:, :, start_x:end_x, start_y:end_y]
 
                 # pad if needed
-                lsm = F.pad(lsm, [0, pad_y, 0, pad_x])
+                #lsm = F.pad(lsm, [0, pad_y, 0, pad_x])
 
                 if static_features is None:
                     static_features = lsm

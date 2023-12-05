@@ -17,6 +17,9 @@ import torch
 import torch.nn.functional as F
 import torch.distributed as dist
 
+# we need some th stuff
+from torch_harmonics.distributed import split_tensor_along_dim
+
 from utils import comm
 
 from torch._utils import _flatten_dense_tensors
@@ -125,60 +128,14 @@ def sync_params(model, mode='broadcast'):
 #                             raise ValueError(f"Unknown weight synchronization mode {mode}")
 
 
-def pad_helper(tensor, dim, new_size, mode="zero"):
-    ndim = tensor.ndim
-    dim = (dim + ndim) % ndim
-    ndim_pad = ndim - dim
-    output_shape = [0 for _ in range(2*ndim_pad)]
-    orig_size = tensor.shape[dim]
-    output_shape[1] = new_size - orig_size
-    tensor_pad = F.pad(tensor, output_shape, mode='constant', value=0.)
-    
-    if mode == "conj":
-        lhs_slice = [slice(0,x) if idx != dim else slice(orig_size, new_size) for idx,x in enumerate(tensor.shape)]
-        rhs_slice = [slice(0,x) if idx != dim else slice(1, output_shape[1]+1) for idx,x in enumerate(tensor.shape)]
-        tensor_pad[lhs_slice] = torch.flip(torch.conj(tensor_pad[rhs_slice]), dims=[dim])
-        
-    return tensor_pad
-
-
-def truncate_helper(tensor, dim, new_size):
-    input_format = get_memory_format(tensor)
-    ndim = tensor.ndim
-    dim = (dim + ndim) % ndim
-    output_slice = [slice(0,x) if idx != dim else slice(0,new_size) for idx,x in enumerate(tensor.shape)]
-    tensor_trunc = tensor[output_slice].contiguous(memory_format=input_format)
-    
-    return tensor_trunc
-
-
-def split_tensor_along_dim(tensor, dim, num_chunks):
-    assert dim < tensor.dim(), f"Error, tensor dimension is {tensor.dim()} which cannot be split along {dim}"
-    assert (tensor.shape[dim] % num_chunks == 0), f"Error, cannot split dim {dim} evenly. Dim size is \
-                                                  {tensor.shape[dim]} and requested numnber of splits is {num_chunks}"
-    chunk_size = tensor.shape[dim] // num_chunks
-    tensor_list = torch.split(tensor, chunk_size, dim=dim)
-    
-    return tensor_list
-
-
-# distributed primitives
-def _transpose(tensor, dim0, dim1, group=None, async_op=False):
-    # get input format
-    input_format = get_memory_format(tensor)
-    
-    # get comm params
-    comm_size = dist.get_world_size(group=group)
-
-    # split and local transposition
-    split_size = tensor.shape[dim0] // comm_size
-    x_send = [y.contiguous(memory_format=input_format) for y in torch.split(tensor, split_size, dim=dim0)]
-    x_recv = [torch.empty_like(x_send[0]) for _ in range(comm_size)]
-    
-    # global transposition
-    req = dist.all_to_all(x_recv, x_send, group=group, async_op=async_op)
-    
-    return x_recv, req 
+#def split_tensor_along_dim(tensor, dim, num_chunks):
+#    assert dim < tensor.dim(), f"Error, tensor dimension is {tensor.dim()} which cannot be split along {dim}"
+#    assert (tensor.shape[dim] % num_chunks == 0), f"Error, cannot split dim {dim} evenly. Dim size is \
+#                                                  {tensor.shape[dim]} and requested numnber of splits is {num_chunks}"
+#    chunk_size = tensor.shape[dim] // num_chunks
+#    tensor_list = torch.split(tensor, chunk_size, dim=dim)
+#    
+#    return tensor_list
 
 
 def _reduce(input_, use_fp32=True, group=None):
@@ -219,7 +176,7 @@ def _split(input_, dim_, group=None):
     
     return output
 
-def _gather(input_, dim_, group=None):
+def _gather(input_, dim_, group=None, shape_list=None):
     """Gather tensors and concatinate along the last dimension."""
     # get input format
     input_format = get_memory_format(input_) 
@@ -236,7 +193,16 @@ def _gather(input_, dim_, group=None):
     comm_rank = dist.get_rank(group=group)
     
     input_ = input_.contiguous(memory_format=input_format)
-    tensor_list = [torch.empty_like(input_) for _ in range(comm_size)]
+
+    if shape_list is not None:
+        shape = list(input_.shape)
+        shapes = []
+        for i in range(comm_size):
+            shape[dim] = shape_list[i]
+            shapes.append(shape)
+        tensor_list = [torch.empty(shape, device=input_.device, dtype=input_.dtype) for _ in range(comm_size)]
+    else:
+        tensor_list = [torch.empty_like(input_) for _ in range(comm_size)]
     tensor_list[comm_rank] = input_
     dist.all_gather(tensor_list, input_, group=group)
     
