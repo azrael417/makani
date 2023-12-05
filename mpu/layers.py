@@ -26,44 +26,42 @@ from modulus.distributed.mappings import reduce_from_parallel_region
 from modulus.distributed.mappings import scatter_to_parallel_region
 from modulus.distributed.mappings import gather_from_parallel_region
 from modulus.distributed.mappings import copy_to_parallel_region
-from mpu.helpers import _transpose
-from mpu.helpers import pad_helper
-from mpu.helpers import truncate_helper 
+#from mpu.helpers import _transpose
+from torch_harmonics.distributed import compute_split_shapes
+from torch_harmonics.distributed import distributed_transpose_azimuth, distributed_transpose_polar \
+    as distributed_transpose_w, distributed_transpose_h
 
-
-class distributed_transpose_w(torch.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, x, dim):
-        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("w"))
-        x = torch.cat(xlist, dim=dim[1])
-        ctx.dim = dim
-        return x
-
-    @staticmethod
-    def backward(ctx, go):
-        dim = ctx.dim
-        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("w"))
-        gi = torch.cat(gilist, dim=dim[0])
-        return gi, None
-
-    
-class distributed_transpose_h(torch.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, x, dim):
-        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("h"))
-        x = torch.cat(xlist, dim=dim[1])
-        ctx.dim = dim
-        return x
-
-    @staticmethod
-    def backward(ctx, go):
-        dim = ctx.dim
-        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("h"))
-        gi = torch.cat(gilist, dim=dim[0])
-        return gi, None
-
+#class distributed_transpose_w(torch.autograd.Function):
+#
+#    @staticmethod
+#    def forward(ctx, x, dim):
+#        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("w"))
+#        x = torch.cat(xlist, dim=dim[1])
+#        ctx.dim = dim
+#        return x
+#
+#    @staticmethod
+#    def backward(ctx, go):
+#        dim = ctx.dim
+#        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("w"))
+#        gi = torch.cat(gilist, dim=dim[0])
+#        return gi, None
+   
+#class distributed_transpose_h(torch.autograd.Function):
+#
+#    @staticmethod
+#    def forward(ctx, x, dim):
+#        xlist, _ = _transpose(x, dim[0], dim[1], group=comm.get_group("h"))
+#        x = torch.cat(xlist, dim=dim[1])
+#        ctx.dim = dim
+#        return x
+#
+#    @staticmethod
+#    def backward(ctx, go):
+#        dim = ctx.dim
+#        gilist, _ = _transpose(go, dim[1], dim[0], group=comm.get_group("h"))
+#        gi = torch.cat(gilist, dim=dim[0])
+#        return gi, None
 
 
 class DistributedRealFFT2(nn.Module):
@@ -92,66 +90,50 @@ class DistributedRealFFT2(nn.Module):
         self.lmax_high = math.ceil(self.lmax / 2)
         self.lmax_low = math.floor(self.lmax / 2)
 
-        # frequency paddings
-        ldist = (self.lmax + self.comm_size_h - 1) // self.comm_size_h
-        self.lpad = ldist * self.comm_size_h - self.lmax
-        mdist = (self.mmax + self.comm_size_w - 1) // self.comm_size_w
-        self.mpad = mdist * self.comm_size_w - self.mmax
+        # shapes
+        self.lat_shapes = compute_split_shapes(self.nlat, self.comm_size_h)
+        self.lon_shapes = compute_split_shapes(self.nlon, self.comm_size_w)
+        self.l_shapes = compute_split_shapes(self.lmax, self.comm_size_h)
+        self.m_shapes = compute_split_shapes(self.mmax, self.comm_size_w)
         
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        # we need to ensure that we can split the channels evenly
-        assert(x.shape[1] % self.comm_size_h == 0)
-        assert(x.shape[1] % self.comm_size_w == 0)
+        # store number of chans
+        num_chans = x.shape[1]
         
         # h and w is split. First we make w local by transposing into channel dim
         if self.comm_size_w > 1:
-            xt = distributed_transpose_w.apply(x, (1, -1))
-        else:
-            xt = x
+            x = distributed_transpose_w.apply(x, (1, -1), self.lon_shapes)
 
         # do first FFT
-        xtf = torch.fft.rfft(xt, n=self.nlon, dim=-1, norm="ortho")
+        x = torch.fft.rfft(x, n=self.nlon, dim=-1, norm="ortho")
 
         # truncate
-        xtft = xtf[..., :self.mmax]
-        
-        # pad at the end: this is important for downstream tasks 
-        xtfp = F.pad(xtft, (0, self.mpad), mode="constant")
+        x = x[..., :self.mmax]
 
         # transpose: after this, m is split and c is local
         if self.comm_size_w > 1:
-            y = distributed_transpose_w.apply(xtfp, (-1, 1))
-        else:
-            y = xtfp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_w)
+            x = distributed_transpose_w.apply(x, (-1, 1), chan_shapes)
             
         # transpose: after this, c is split and h is local
         if self.comm_size_h > 1:
-            yt = distributed_transpose_h.apply(y, (1, -2))
-        else:
-            yt = y
-
-        # the input data might be padded, make sure to truncate to nlat:
-        ytt = yt[..., :self.nlat, :].contiguous()
+            x = distributed_transpose_h.apply(x, (1, -2), self.lat_shapes)
 
         # do second FFT:
-        yo = torch.fft.fft(ytt, n=self.nlat, dim=-2, norm="ortho")
+        x = torch.fft.fft(x, n=self.nlat, dim=-2, norm="ortho")
 
         # apply mode truncation:
-        yot = torch.cat([yo[..., :self.lmax_high,  :],
-                         yo[..., -self.lmax_low:, :]], dim=-2)
-
-        # pad at the end: this is important for downstream tasks
-        yop = F.pad(yot, (0, 0, 0, self.lpad), mode="constant")
+        x = torch.cat([x[..., :self.lmax_high,  :],
+                       x[..., -self.lmax_low:, :]], dim=-2)
         
         # transpose: after this, l is split and c is local
         if self.comm_size_h > 1:
-            y = distributed_transpose_h.apply(yop, (-2, 1))
-        else:
-            y = yop
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_h)
+            x = distributed_transpose_h.apply(x, (-2, 1), chan_shapes)
 
-        return y
+        return x
 
     
 class DistributedInverseRealFFT2(nn.Module):
@@ -180,77 +162,50 @@ class DistributedInverseRealFFT2(nn.Module):
         self.lmax_high = math.ceil(self.lmax / 2)
         self.lmax_low = math.floor(self.lmax / 2)
 
-        # spatial paddings
-        latdist = (self.nlat + self.comm_size_h - 1) // self.comm_size_h
-        self.latpad = latdist * self.comm_size_h - self.nlat
-        londist = (self.nlon + self.comm_size_w - 1) // self.comm_size_w
-        self.lonpad = londist * self.comm_size_w - self.nlon
-        
-        # frequency paddings
-        ldist = (self.lmax + self.comm_size_h - 1) // self.comm_size_h
-        self.lpad = ldist * self.comm_size_h - self.lmax
-        mdist = (self.mmax + self.comm_size_w - 1) // self.comm_size_w
-        self.mpad = mdist * self.comm_size_w - self.mmax
+        # shapes
+        self.lat_shapes = compute_split_shapes(self.nlat, self.comm_size_h)
+        self.lon_shapes = compute_split_shapes(self.nlon, self.comm_size_w)
+        self.l_shapes = compute_split_shapes(self.lmax, self.comm_size_h)
+        self.m_shapes = compute_split_shapes(self.mmax, self.comm_size_w)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        # we need to ensure that we can split the channels evenly
-        assert(x.shape[1] % self.comm_size_h == 0)
-        assert(x.shape[1] % self.comm_size_w == 0)
+        # store number of channels
+        num_chans = x.shape[1]
 
         # transpose: after that, channels are split, l is local:
         if self.comm_size_h > 1:
-            xt = distributed_transpose_h.apply(x, (1, -2))
-        else:
-            xt = x
+            x = distributed_transpose_h.apply(x, (1, -2), self.l_shapes)
             
-        # truncate: assumes that data was padded at the END!
-        # this is compatibel with the forward transform and easier to handle
-        # in a distributed setting
-        xtt = xt[..., :self.lmax, :]
-
         # we should pad the middle here manually, so that the inverse FFT is correct
         # TEST THIS
         if self.lmax < self.nlat:
-            xtth = xtt[..., :self.lmax_high, :]
-            xttl = xtt[..., -self.lmax_low, :]
-            xtthp = F.pad(xtth, (0, 0, 0, self.nlat-self.lmax), mode="constant")
-            xtt = torch.cat([xtthp, xttl], dim=-2)
+            xh = x[..., :self.lmax_high, :]
+            xl = x[..., -self.lmax_low:, :]
+            xhp = F.pad(xh, (0, 0, 0, self.nlat-self.lmax), mode="constant")
+            x = torch.cat([xhp, xl], dim=-2)
         
         # do first fft
-        xf = torch.fft.ifft(xtt, n=self.nlat, dim=-2, norm="ortho")
-        
-        # transpose: after this, l is split and channels are local
-        xfp = F.pad(xf, (0, 0, 0, self.latpad), mode="constant")
+        x = torch.fft.ifft(x, n=self.nlat, dim=-2, norm="ortho")
 
         if self.comm_size_h > 1:
-            y = distributed_transpose_h.apply(xfp, (-2, 1))
-        else:
-            y = xfp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_h)
+            x = distributed_transpose_h.apply(x, (-2, 1), chan_shapes)
 
         # transpose: after this, channels are split and m is local
         if self.comm_size_w > 1:
-            yt = distributed_transpose_w.apply(y, (1, -1))
-        else:
-            yt = y
-
-        # truncate
-        ytt = yt[..., :self.mmax]
+            x = distributed_transpose_w.apply(x, (1, -1), self.m_shapes)
 
         # apply the inverse (real) FFT
-        x = torch.fft.irfft(ytt, n=self.nlon, dim=-1, norm="ortho")
-
-        # pad before we transpose back
-        xp = F.pad(x, (0, self.lonpad), mode="constant")
+        x = torch.fft.irfft(x, n=self.nlon, dim=-1, norm="ortho")
 
         # transpose: after this, m is split and channels are local
         if self.comm_size_w > 1:
-            out = distributed_transpose_w.apply(xp, (-1, 1))
-        else:
-            out = xp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_w)
+            x = distributed_transpose_w.apply(x, (-1, 1), chan_shapes)
 
-        return out
+        return x
 
 
     

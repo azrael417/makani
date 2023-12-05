@@ -4,7 +4,9 @@ from torch import nn
 import torch.nn.functional as F
 
 from utils import comm
-from .layers import distributed_transpose_h, distributed_transpose_w
+from torch_harmonics.distributed import compute_split_shapes
+from torch_harmonics.distributed import distributed_transpose_azimuth, distributed_transpose_polar \
+    as distributed_transpose_w, distributed_transpose_h
 
 # 3D routines
 # forward
@@ -49,6 +51,7 @@ class RealFFT3(nn.Module):
         
         return y
 
+    
 class DistributedRealFFT3(nn.Module):
     """
     Helper routine to wrap FFT similarly to the SHT
@@ -81,73 +84,57 @@ class DistributedRealFFT3(nn.Module):
         self.lhmax_high = math.ceil(self.lhmax / 2)
         self.lhmax_low = math.floor(self.lhmax / 2)
 
-        # frequency paddings: 
-        # we assume the d-dim is always 
-        # local, so we do not need padding here.
-        lhdist = (self.lhmax + self.comm_size_h - 1) // self.comm_size_h
-        self.lhpad = lhdist * self.comm_size_h - self.lhmax
-        lwdist = (self.lwmax + self.comm_size_w - 1) // self.comm_size_w
-        self.lwpad = lwdist * self.comm_size_w - self.lwmax
+        # shapes, we assume the d-dim is always local
+        self.lat_shapes = compute_split_shapes(self.nlat, self.comm_size_h)
+        self.lon_shapes = compute_split_shapes(self.nlon, self.comm_size_w)
+        self.l_shapes = compute_split_shapes(self.lmax, self.comm_size_h)
+        self.m_shapes = compute_split_shapes(self.mmax, self.comm_size_w)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        # we need to ensure that we can split the channels evenly
+        # make sure input is 5D
         assert(x.dim() == 5)
-        assert(x.shape[1] % self.comm_size_h == 0)
-        assert(x.shape[1] % self.comm_size_w == 0)
+        
+        # store number of chans
+        num_chans = x.shape[1]
         
         # h and w is split. First we make w local by transposing into channel dim
         if self.comm_size_w > 1:
-            xt = distributed_transpose_w.apply(x, (1, 4))
-        else:
-            xt = x
+            x = distributed_transpose_w.apply(x, (1, 4), self.lon_shapes)
         
         # do first 2D FFT
-        xtf = torch.fft.rfft2(xt, s=(self.nd, self.nw), dim=(2, 4), norm="ortho")
+        x = torch.fft.rfft2(x, s=(self.nd, self.nw), dim=(2, 4), norm="ortho")
         
         # truncate width-modes
-        xtft = xtf[..., :self.lwmax]
+        x = x[..., :self.lwmax]
         
         # truncate depth-modes
-        xtftt = torch.cat([xtft[:, :, :self.ldmax_high, ...], 
-                           xtft[:, :, -self.ldmax_low:, ...]], dim=2)
+        x = torch.cat([x[:, :, :self.ldmax_high, ...], 
+                       x[:, :, -self.ldmax_low:, ...]], dim=2)
         
-        # pad the dim to allow for splitting
-        xtfp = F.pad(xtftt, (0, self.lwpad), mode="constant")
-
         # transpose: after this, m is split and c is local
         if self.comm_size_w > 1:
-            y = distributed_transpose_w.apply(xtfp, (4, 1))
-        else:
-            y = xtfp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_w)
+            x = distributed_transpose_w.apply(x, (4, 1), chan_shapes)
             
         # transpose: after this, c is split and h is local
         if self.comm_size_h > 1:
-            yt = distributed_transpose_h.apply(y, (1, 3))
-        else:
-            yt = y
-
-        # the input data might be padded, make sure to truncate to nlat:
-        ytt = yt[..., :self.nh, :].contiguous()
+            x = distributed_transpose_h.apply(x, (1, 3), self.lat_shapes)
 
         # do second FFT:
-        yo = torch.fft.fft(ytt, n=self.nh, dim=3, norm="ortho")
+        x = torch.fft.fft(x, n=self.nh, dim=3, norm="ortho")
         
         # truncate the modes
-        yot = torch.cat([yo[..., :self.lhmax_high, :], 
-                         yo[..., -self.lhmax_low:, :]], dim=3)
-
-        # pad if required
-        yop = F.pad(yot, (0, 0, 0, self.lhpad), mode="constant")
+        x = torch.cat([x[..., :self.lhmax_high, :], 
+                       x[..., -self.lhmax_low:, :]], dim=3)
         
         # transpose: after this, l is split and c is local
         if self.comm_size_h > 1:
-            y = distributed_transpose_h.apply(yop, (3, 1))
-        else:
-            y = yop
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_h)
+            x = distributed_transpose_h.apply(x, (3, 1), chan_shapes)
 
-        return y
+        return x
         
     
 class InverseRealFFT3(nn.Module):
@@ -235,80 +222,55 @@ class DistributedInverseRealFFT3(nn.Module):
         self.lhmax_high = math.ceil(self.lhmax / 2)
         self.lhmax_low = math.floor(self.lhmax / 2)
 
-        # spatial paddings
-        hdist = (self.nh + self.comm_size_h - 1) // self.comm_size_h
-        self.hpad = hdist * self.comm_size_h - self.nh
-        wdist = (self.nw + self.comm_size_w - 1) // self.comm_size_w
-        self.wpad = wdist * self.comm_size_w - self.nw
-        
-        # frequency paddings
-        lhdist = (self.lhmax + self.comm_size_h - 1) // self.comm_size_h
-        self.lhpad = lhdist * self.comm_size_h - self.lhmax
-        lwdist = (self.lwmax + self.comm_size_w - 1) // self.comm_size_w
-        self.lwpad = lwdist * self.comm_size_w - self.lwmax
+        # shapes, we assume the d-dim is always local
+        self.lat_shapes = compute_split_shapes(self.nlat, self.comm_size_h)
+        self.lon_shapes = compute_split_shapes(self.nlon, self.comm_size_w)
+        self.l_shapes = compute_split_shapes(self.lmax, self.comm_size_h)
+        self.m_shapes = compute_split_shapes(self.mmax, self.comm_size_w)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        # we need to ensure that we can split the channels evenly
+        # make sure input is 5D
         assert(x.dim() == 5)
-        assert(x.shape[1] % self.comm_size_h == 0)
-        assert(x.shape[1] % self.comm_size_w == 0)
+
+        # store number of chans
+        num_chans = x.shape[1]
 
         # transpose: after that, channels are split, l is local:
         if self.comm_size_h > 1:
-            xt = distributed_transpose_h.apply(x, (1, 3))
-        else:
-            xt = x
+            x = distributed_transpose_h.apply(x, (1, 3), self.l_shapes)
             
-        # truncate: assumes that data was padded at the END!
-        # this is compatibel with the forward transform and easier to handle
-        # in a distributed setting
-        xtt = xt[..., :self.lhmax, :]
-
         # we should pad the middle here manually, so that the inverse FFT is correct
         if self.lhmax < self.nh:
-            xtth = xtt[..., :self.lhmax_high, :]
-            xttl = xtt[..., -self.lhmax_low, :]
-            xtthp = F.pad(xtth, (0, 0, 0, self.nlat-self.lhmax), mode="constant")
-            xtt = torch.cat([xtthp, xttl], dim=-2)
+            xh = x[..., :self.lhmax_high, :]
+            xl = x[..., -self.lhmax_low:, :]
+            xhp = F.pad(xh, (0, 0, 0, self.nlat-self.lhmax), mode="constant")
+            x = torch.cat([xhp, xl], dim=-2)
             
         if self.ldmax < self.nd:
-            xtth = xtt[:, :, :self.ldmax_high, ...]
-            xttl = xtt[:, :, -self.ldmax_low, ...]
-            xtthp = F.pad(xtth, (0, 0, 0, 0, 0, self.nd-self.ldmax), mode="constant")
-            xtt = torch.cat([xtthp, xttl], dim=-2)
+            xh = x[:, :, :self.ldmax_high, ...]
+            xl = x[:, :, -self.ldmax_low:, ...]
+            xhp = F.pad(xh, (0, 0, 0, 0, 0, self.nd-self.ldmax), mode="constant")
+            x = torch.cat([xhp, xl], dim=-2)
         
         # do first fft
-        xf = torch.fft.ifft2(xtt, s=(self.nd, self.nh), dim=(2, 3), norm="ortho")
-        
-        # transpose: after this, l is split and channels are local
-        xfp = F.pad(xf, (0, 0, 0, self.hpad), mode="constant")
+        x = torch.fft.ifft2(x, s=(self.nd, self.nh), dim=(2, 3), norm="ortho")
 
         if self.comm_size_h > 1:
-            y = distributed_transpose_h.apply(xfp, (3, 1))
-        else:
-            y = xfp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_h)
+            x = distributed_transpose_h.apply(x, (3, 1), chan_shapes)
 
         # transpose: after this, channels are split and m is local
         if self.comm_size_w > 1:
-            yt = distributed_transpose_w.apply(y, (1, 4))
-        else:
-            yt = y
-
-        # truncate
-        ytt = yt[..., :self.lwmax]
+            x = distributed_transpose_w.apply(x, (1, 4), self.m_shapes)
 
         # apply the inverse (real) FFT
-        x = torch.fft.irfft(ytt, n=self.nw, dim=-1, norm="ortho")
-        
-        # pad before we transpose back
-        xp = F.pad(x, (0, self.wpad), mode="constant")
+        x = torch.fft.irfft(x, n=self.nw, dim=-1, norm="ortho")
 
         # transpose: after this, m is split and channels are local
         if self.comm_size_w > 1:
-            out = distributed_transpose_w.apply(xp, (4, 1))
-        else:
-            out = xp
+            chan_shapes = compute_split_shapes(num_chans, self.comm_size_w)
+            x = distributed_transpose_w.apply(x, (4, 1), chan_shapes)
 
-        return out
+        return x
