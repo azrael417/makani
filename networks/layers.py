@@ -202,7 +202,7 @@ class MLP(nn.Module):
 
     @torch.jit.ignore
     def checkpoint_forward(self, x):
-        return checkpoint(self.fwd, x)
+        return checkpoint(self.fwd, x, use_reentrant=False)
         
     def forward(self, x):
         if self.checkpointing >= 2:

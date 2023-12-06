@@ -579,7 +579,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
         for r in range(self.repeat_layers):
             for blk in self.blocks:
                 if self.checkpointing >= 3:
-                    x = checkpoint(blk, x)
+                    x = checkpoint(blk, x, use_reentrant=False)
                 else:
                     x = blk(x)
 
@@ -606,7 +606,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
             x = scatter_to_parallel_region(x, 1, "fin")
 
         if self.checkpointing >= 1:
-            x = checkpoint(self.encoder, x)
+            x = checkpoint(self.encoder, x, use_reentrant=False)
         else:
             x = self.encoder(x)
 
@@ -630,7 +630,7 @@ class SphericalFourierNeuralOperatorNet(nn.Module):
         x = self._forward_features(x)
 
         if self.checkpointing >= 1:
-            x = checkpoint(self.decoder, x)
+            x = checkpoint(self.decoder, x, use_reentrant=False)
         else:
             x = self.decoder(x)
 

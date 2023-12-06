@@ -440,7 +440,7 @@ class DistributedMLP(nn.Module):
 
     @torch.jit.ignore
     def _checkpoint_forward(self, x):
-        return checkpoint(self.fwd, x)
+        return checkpoint(self.fwd, x, use_reentrant=False)
 
     def forward(self, x):
         if self.checkpointing:
