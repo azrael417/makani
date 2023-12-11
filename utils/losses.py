@@ -24,6 +24,7 @@ import torch.nn.functional as F
 
 from utils import comm
 from utils.grids import GridQuadrature
+from modulus.distributed.utils import compute_split_shapes
 from modulus.distributed.mappings import reduce_from_parallel_region, gather_from_parallel_region
 
 import torch_harmonics as harmonics
@@ -138,20 +139,16 @@ class LossHandler(nn.Module):
         self.do_gather_input = False
         if comm.get_size("spatial") > 1:
             self.do_gather_input = True
+            self.gather_shapes_h = compute_split_shapes(self.crop_shape[0], comm.get_size("h"))
+            self.gather_shapes_w = compute_split_shapes(self.crop_shape[1], comm.get_size("w"))
 
     @torch.jit.ignore
     def _gather_input(self, x: torch.Tensor) -> torch.Tensor:
         # combine data
         # h
-        h_shapes = compute_split_shapes(self.crop_shape[0], comm.get_size("h"))
-        xh = gather_from_parallel_region(x, -2, h_shapes, "h")
-        w_shapes = compute_split_shapes(self.crop_shape[1], comm.get_size("w"))
-        x = gather_from_parallel_region(xh, -1, w_shapes, "w")
-    
-        # crop
-        #x = xw[...,
-        #       self.crop_offset[0]:self.crop_offset[0]+self.crop_shape[0],
-        #       self.crop_offset[1]:self.crop_offset[1]+self.crop_shape[1]].contiguous()
+        xh = gather_from_parallel_region(x, -2, self.gather_shapes_h, "h")
+        # w
+        x = gather_from_parallel_region(xh, -1, self.gather_shapes_w, "w")
 
         return x
 
@@ -171,8 +168,6 @@ class LossHandler(nn.Module):
         else:
             chw = self.channel_weights
         
-        
-        # print(chw.reshape(-1))
         if self.training:
             chw = (chw * self.multistep_weight).reshape(1, -1)
         else:

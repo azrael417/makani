@@ -29,7 +29,7 @@ from utils import comm
 from utils.grids import GridConverter
 
 # we need this
-from torch_harmonics.distributed import compute_split_shapes
+from modulus.distributed.utils import compute_split_shapes
 
 class DummyLoader(object):
     def __init__(self,

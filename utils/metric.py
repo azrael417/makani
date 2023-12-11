@@ -20,6 +20,7 @@ import wandb
 from utils import comm
 from utils.metrics.functions import GeometricL1, GeometricRMSE, GeometricACC, Quadrature
 import torch.distributed as dist
+from modulus.distributed.utils import compute_split_shapes
 from modulus.distributed.mappings import gather_from_parallel_region
 
 class MetricsHandler():
@@ -126,16 +127,16 @@ class MetricsHandler():
         self.do_gather_input = False
         if (comm.get_size("h") * comm.get_size("w") > 1):
             self.do_gather_input = True
+            self.gather_shapes_h = compute_split_shapes(self.crop_shape[0], comm.get_size("h"))
+            self.gather_shapes_w = compute_split_shapes(self.crop_shape[1], comm.get_size("w"))
 
             
     @torch.jit.ignore
     def _gather_input(self, x: torch.Tensor) -> torch.Tensor:
         """gather and crop the data"""
 
-        h_shapes = compute_split_shapes(self.crop_shape[0], comm.get_size("h"))
-        xh = gather_from_parallel_region(x, -2, h_shapes, "h")
-        w_shapes = compute_split_shapes(self.crop_shape[1], comm.get_size("w"))
-        x = gather_from_parallel_region(xh, -1, w_shapes, "w")
+        xh = gather_from_parallel_region(x, -2, self.gather_shapes_h, "h")
+        x = gather_from_parallel_region(xh, -1, self.gather_shapes_w, "w")
         
         #x = xw[...,
         #       self.crop_offset[0]:self.crop_offset[0]+self.crop_shape[0],

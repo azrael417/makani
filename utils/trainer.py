@@ -108,7 +108,7 @@ class Trainer():
                              tar_shape[2],
                              tar_shape[3])
 
-        #print(inp_shape_eff, tar_shape_eff)
+        # init static tensors
         self.static_inp = torch.zeros(inp_shape_eff, dtype=torch.float32, device=self.device)
         self.static_tar = torch.zeros(tar_shape_eff, dtype=torch.float32, device=self.device)
 
@@ -587,8 +587,8 @@ class Trainer():
         tar_shape = tar.shape
 
         self._compile_model(inp_shape)
-        if not self.loss_obj.is_distributed():
-            self.loss_obj = torch.jit.script(self.loss_obj)
+        #if not self.loss_obj.is_distributed():
+        #    self.loss_obj = torch.jit.script(self.loss_obj)
 
         # graph capture
         self.graph = None
@@ -766,7 +766,7 @@ class Trainer():
                 with amp.autocast(enabled = self.amp_enabled, dtype = self.amp_dtype):
                     pred = self.model_train(inp)
                     loss = self.loss_obj(pred, tar, inp)
-
+                    
                 self.gscaler.scale(loss).backward()
 
             # perform weight update

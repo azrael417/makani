@@ -22,15 +22,15 @@ from torch.cuda.amp import custom_fwd, custom_bwd
 from utils import comm
 
 # parallel helpers
+from modulus.distributed.utils import compute_split_shapes
 from modulus.distributed.mappings import reduce_from_parallel_region
 from modulus.distributed.mappings import scatter_to_parallel_region
 from modulus.distributed.mappings import gather_from_parallel_region
 from modulus.distributed.mappings import copy_to_parallel_region
 
 # use some distributed routines from torch harmonics
-from torch_harmonics.distributed import compute_split_shapes
-from torch_harmonics.distributed import distributed_transpose_azimuth, distributed_transpose_polar \
-    as distributed_transpose_w, distributed_transpose_h
+from torch_harmonics.distributed import distributed_transpose_azimuth as distributed_transpose_w
+from torch_harmonics.distributed import distributed_transpose_polar as distributed_transpose_h
 
 
 class DistributedRealFFT2(nn.Module):

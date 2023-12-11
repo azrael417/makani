@@ -31,7 +31,7 @@ from bisect import bisect_right
 import torch
 
 # import splitting logic
-from torch_harmonics.distributed import compute_split_shapes
+from modulus.distributed.utils import compute_split_shapes
 
 # we need this for the zenith angle feature
 import datetime

@@ -32,7 +32,7 @@ import datetime
 from utils.grids import GridConverter
 
 # import splitting logic
-from torch_harmonics.distributed import compute_split_shapes
+from modulus.distributed.utils import compute_split_shapes
 
 class MultifilesDataset(Dataset):
     def __init__(self,
