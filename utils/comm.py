@@ -30,15 +30,24 @@ _DM = None
 _COMM_ROOTS = {}
 
 def get_size(name: str) -> int:
-    return _DM.group_size(name)
+    if _DM is not None:
+        return _DM.group_size(name)
+    else:
+        return 1
 
     
 def get_rank(name: str) -> int:
-    return _DM.group_rank(name)
+    if _DM is not None:
+        return _DM.group_rank(name)
+    else:
+        return 0
 
     
 def get_group(name: str):
-    return _DM.group(name)
+    if _DM is not None:
+        return _DM.group(name)
+    else:
+        return None
 
 
 def get_root(name: str) -> int:
@@ -51,24 +60,38 @@ def get_root(name: str) -> int:
     
 # specialized routines for world comms
 def get_world_size():
-    return _DM.world_size
+    if _DM is not None:
+        return _DM.world_size
+    else:
+        return 1
 
     
 def get_world_rank():
-    return _DM.rank
+    if _DM is not None:
+        return _DM.rank
+    else:
+        return 0
 
 
 def get_local_rank():
-    return _DM.local_rank
+    if _DM is not None:
+        return _DM.local_rank
+    else:
+        return 0
 
 
 def get_names():
-    return [name for name in _DM.group_names if (not name.startswith("__orthogonal_to"))]
+    if _DM is not None:
+        return [name for name in _DM.group_names if (not name.startswith("__orthogonal_to"))]
+    else:
+        return []
 
 
 def is_distributed(name: str):
-    return (name in _DM.group_names)
-
+    if _DM is not None:
+        return (name in _DM.group_names)
+    else:
+        return False
 
 # get 
 def init(params, verbose=False):
@@ -119,13 +142,13 @@ def init(params, verbose=False):
             if rank in grp:
                 _COMM_ROOTS[gname] = min(grp)
 
-    # print debug
-    #import torch
-    #for rank in range(_DM.world_size):
-    #    if rank == _DM.rank:
-    #        print(f"{rank}: groups:")
-    #        for gname in get_names():
-    #            print(f"\t{gname}: {_DM._group_ranks[gname]}, root={_COMM_ROOTS[gname]}")
-    #    torch.distributed.barrier(device_ids=[_DM.local_rank])
+    if verbose:
+        import torch
+        for rank in range(_DM.world_size):
+            if rank == _DM.rank:
+                print(f"{rank}: groups:")
+                for gname in get_names():
+                    print(f"\t{gname}: {_DM._group_ranks[gname]}, root={_COMM_ROOTS[gname]}")
+            torch.distributed.barrier(device_ids=[_DM.local_rank])
     
     return _DM.group_size("model")
